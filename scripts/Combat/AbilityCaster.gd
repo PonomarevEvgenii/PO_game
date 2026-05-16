@@ -1,0 +1,318 @@
+class_name AbilityCaster
+extends Node
+
+@export var owner_actor_path: NodePath = NodePath("..")
+@export var abilities: Array = []
+
+var _owner: Actor
+var _cooldowns: Array[float] = []
+
+
+func _ready() -> void:
+	_owner = get_node_or_null(owner_actor_path) as Actor
+	_reset_cooldowns()
+
+
+func _process(delta: float) -> void:
+	for i in range(_cooldowns.size()):
+		if _cooldowns[i] > 0.0:
+			_cooldowns[i] = maxf(0.0, _cooldowns[i] - delta)
+
+
+func set_abilities(new_abilities: Array) -> void:
+	abilities = new_abilities
+	_reset_cooldowns()
+
+
+func cast(slot: int, target_position: Vector2) -> bool:
+	if _owner == null or slot < 0 or slot >= abilities.size() or slot >= _cooldowns.size():
+		return false
+	if not _owner.is_alive():
+		return false
+
+	var ability: Dictionary = abilities[slot]
+	if ability.is_empty() or _cooldowns[slot] > 0.0:
+		return false
+
+	_execute_ability(ability, target_position)
+	_cooldowns[slot] = float(ability.get("cooldown", 1.0))
+	return true
+
+
+func get_cooldown(slot: int) -> float:
+	if slot < 0 or slot >= _cooldowns.size():
+		return 0.0
+
+	return _cooldowns[slot]
+
+
+func _execute_ability(ability: Dictionary, target_position: Vector2) -> void:
+	match String(ability.get("id", "")):
+		"piercing_arrow":
+			_damage_enemies_along_line(_owner.global_position, _limited_target(target_position, float(ability.get("range", 0.0))), float(ability.get("radius", 0.0)), float(ability.get("power", 0.0)))
+		"mark_prey":
+			_mark_prey(target_position, ability)
+		"nature_dash":
+			_owner.apply_move_speed_multiplier(1.85, 2.4)
+		"hail_of_arrows":
+			_hail_of_arrows(target_position, ability)
+		"healing_melody":
+			_heal_allies_in_radius(_owner.global_position, float(ability.get("radius", 0.0)), float(ability.get("power", 0.0)))
+		"swamp_ritual":
+			_swamp_ritual(target_position, ability)
+		"frog_jump":
+			_dash_toward(target_position, float(ability.get("range", 0.0)))
+			_damage_enemies_in_radius(_owner.global_position, float(ability.get("radius", 0.0)), float(ability.get("power", 0.0)))
+		"sticky_tongue":
+			_sticky_tongue(target_position, ability)
+		"whirlwind":
+			_damage_enemies_in_radius(_owner.global_position, float(ability.get("radius", 0.0)), float(ability.get("power", 0.0)))
+		"blood_rage":
+			_owner.apply_move_speed_multiplier(1.45, 4.0)
+			_owner.apply_attack_damage_multiplier(1.35, 4.0)
+			_owner.heal(float(ability.get("power", 0.0)) * 0.75)
+		"battle_cry":
+			_battle_cry(ability)
+		"berserkers_call":
+			_berserkers_call(ability)
+		"fire_sphere":
+			_damage_enemies_in_radius(_limited_target(target_position, float(ability.get("range", 0.0))), float(ability.get("radius", 0.0)), float(ability.get("power", 0.0)))
+		"ice_sphere":
+			_ice_sphere(target_position, ability)
+		"water_sphere":
+			_owner.heal(float(ability.get("power", 0.0)))
+		"void_sphere":
+			_void_sphere(target_position, ability)
+		"alpha_wolf":
+			_spawn_companion("wolf", _owner.global_position + Vector2(28.0, -16.0), null, Vector2.ZERO)
+		"thorns":
+			_thorns(target_position, ability)
+		"summon_treant":
+			_spawn_companion("treant", _limited_target(target_position, float(ability.get("range", 0.0))), null, _get_enemy_base_position())
+		"snake_charmer":
+			_snake_charmer(target_position, ability)
+		_:
+			_damage_enemies_in_radius(target_position, maxf(float(ability.get("radius", 0.0)), 32.0), float(ability.get("power", 0.0)))
+
+	print("%s cast %s" % [_owner.name, String(ability.get("display_name", "Ability"))])
+
+
+func _dash_toward(target_position: Vector2, max_distance: float) -> void:
+	_owner.global_position = _owner.global_position.move_toward(target_position, max_distance)
+
+
+func _heal_allies_in_radius(center: Vector2, radius: float, amount: float) -> void:
+	for node in get_tree().get_nodes_in_group("combat_actor"):
+		var actor := node as Actor
+		if actor != null and actor.team == _owner.team and actor.global_position.distance_to(center) <= radius:
+			actor.heal(amount)
+
+
+func _damage_enemies_in_radius(center: Vector2, radius: float, damage: float) -> void:
+	for node in get_tree().get_nodes_in_group("combat_actor"):
+		var actor := node as Actor
+		if actor != null and _owner.can_damage(actor) and actor.global_position.distance_to(center) <= radius:
+			actor.take_damage(damage, _owner)
+
+
+func _apply_to_enemies_in_radius(center: Vector2, radius: float, callback: Callable) -> void:
+	for node in get_tree().get_nodes_in_group("combat_actor"):
+		var actor := node as Actor
+		if actor != null and _owner.can_damage(actor) and actor.global_position.distance_to(center) <= radius:
+			callback.call(actor)
+
+
+func _apply_to_allies_in_radius(center: Vector2, radius: float, callback: Callable) -> void:
+	for node in get_tree().get_nodes_in_group("combat_actor"):
+		var actor := node as Actor
+		if actor != null and actor.team == _owner.team and actor.global_position.distance_to(center) <= radius:
+			callback.call(actor)
+
+
+func _damage_enemies_along_line(origin: Vector2, target_position: Vector2, width: float, damage: float) -> void:
+	var end := origin.move_toward(target_position, maxf(origin.distance_to(target_position), 1.0))
+
+	for node in get_tree().get_nodes_in_group("combat_actor"):
+		var actor := node as Actor
+		if actor == null or not _owner.can_damage(actor):
+			continue
+
+		if _distance_point_to_segment(actor.global_position, origin, end) <= maxf(width, 18.0):
+			actor.take_damage(damage, _owner)
+
+
+func _damage_nearest_enemy_to_point(point: Vector2, search_radius: float, damage: float) -> void:
+	var best := _find_nearest_enemy_to_point(point, search_radius)
+
+	if best != null:
+		best.take_damage(damage, _owner)
+
+
+func _find_nearest_enemy_to_point(point: Vector2, search_radius: float) -> Actor:
+	var best: Actor = null
+	var best_distance_squared := search_radius * search_radius
+
+	for node in get_tree().get_nodes_in_group("combat_actor"):
+		var actor := node as Actor
+		if actor == null or not _owner.can_damage(actor):
+			continue
+
+		var distance_squared := point.distance_squared_to(actor.global_position)
+		if distance_squared < best_distance_squared:
+			best = actor
+			best_distance_squared = distance_squared
+
+	return best
+
+
+func _mark_prey(target_position: Vector2, ability: Dictionary) -> void:
+	var target := _find_nearest_enemy_to_point(target_position, float(ability.get("range", 0.0)))
+	if target == null:
+		return
+
+	target.apply_vulnerability(1.45, 5.0)
+	target.take_damage(float(ability.get("power", 0.0)) * 0.55, _owner)
+
+
+func _hail_of_arrows(target_position: Vector2, ability: Dictionary) -> void:
+	var center := _limited_target(target_position, float(ability.get("range", 0.0)))
+	var radius := float(ability.get("radius", 0.0))
+	var damage := float(ability.get("power", 0.0)) / 3.0
+	_apply_to_enemies_in_radius(center, radius, func(actor: Actor) -> void:
+		actor.take_damage(damage, _owner)
+		actor.take_damage(damage, _owner)
+		actor.take_damage(damage, _owner)
+	)
+
+
+func _swamp_ritual(target_position: Vector2, ability: Dictionary) -> void:
+	var center := _limited_target(target_position, float(ability.get("range", 0.0)))
+	var radius := float(ability.get("radius", 0.0))
+	var power := float(ability.get("power", 0.0))
+	_apply_to_enemies_in_radius(center, radius, func(actor: Actor) -> void:
+		actor.take_damage(power, _owner)
+		actor.apply_move_speed_multiplier(0.62, 4.0)
+		actor.apply_vulnerability(1.18, 4.0)
+	)
+	_apply_to_allies_in_radius(center, radius, func(actor: Actor) -> void:
+		actor.heal(power * 0.6)
+		actor.apply_damage_reduction(0.86, 4.0)
+	)
+
+
+func _sticky_tongue(target_position: Vector2, ability: Dictionary) -> void:
+	var target := _find_nearest_enemy_to_point(target_position, float(ability.get("range", 0.0)))
+	if target == null:
+		return
+
+	target.pull_toward(_owner.global_position, 95.0)
+	target.apply_move_speed_multiplier(0.55, 2.0)
+	target.take_damage(float(ability.get("power", 0.0)), _owner)
+
+
+func _battle_cry(ability: Dictionary) -> void:
+	_apply_to_allies_in_radius(_owner.global_position, float(ability.get("radius", 0.0)), func(actor: Actor) -> void:
+		actor.apply_damage_reduction(0.62, 5.0)
+	)
+
+
+func _berserkers_call(ability: Dictionary) -> void:
+	_apply_to_enemies_in_radius(_owner.global_position, float(ability.get("radius", 0.0)), func(actor: Actor) -> void:
+		actor.force_target(_owner, 3.5)
+		actor.take_damage(float(ability.get("power", 0.0)) * 0.5, _owner)
+	)
+
+
+func _ice_sphere(target_position: Vector2, ability: Dictionary) -> void:
+	var end := _limited_target(target_position, float(ability.get("range", 0.0)))
+	for node in get_tree().get_nodes_in_group("combat_actor"):
+		var actor := node as Actor
+		if actor == null or not _owner.can_damage(actor):
+			continue
+
+		if _distance_point_to_segment(actor.global_position, _owner.global_position, end) <= maxf(float(ability.get("radius", 0.0)), 42.0):
+			actor.take_damage(float(ability.get("power", 0.0)), _owner)
+			actor.apply_move_speed_multiplier(0.0, 1.8)
+
+
+func _void_sphere(target_position: Vector2, ability: Dictionary) -> void:
+	var center := _limited_target(target_position, float(ability.get("range", 0.0)))
+	_apply_to_enemies_in_radius(center, float(ability.get("radius", 0.0)), func(actor: Actor) -> void:
+		actor.pull_toward(center, 120.0)
+		actor.apply_move_speed_multiplier(0.35, 2.5)
+		actor.take_damage(float(ability.get("power", 0.0)), _owner)
+	)
+
+
+func _thorns(target_position: Vector2, ability: Dictionary) -> void:
+	var center := _limited_target(target_position, float(ability.get("range", 0.0)))
+	_apply_to_enemies_in_radius(center, float(ability.get("radius", 0.0)), func(actor: Actor) -> void:
+		actor.take_damage(float(ability.get("power", 0.0)), _owner)
+		actor.apply_move_speed_multiplier(0.72, 4.0)
+		actor.apply_vulnerability(1.12, 4.0)
+	)
+
+
+func _snake_charmer(target_position: Vector2, ability: Dictionary) -> void:
+	var target := _find_nearest_enemy_to_point(target_position, float(ability.get("range", 0.0)))
+	if target == null:
+		_damage_nearest_enemy_to_point(target_position, float(ability.get("range", 0.0)), float(ability.get("power", 0.0)))
+		return
+
+	_spawn_companion("snake", _owner.global_position + Vector2(18.0, 10.0), target, target.global_position)
+	target.take_damage(float(ability.get("power", 0.0)) * 0.35, _owner)
+
+
+func _spawn_companion(kind: String, position: Vector2, target: Actor, objective: Vector2) -> void:
+	var companion := SummonedCompanion.new()
+	var parent := _owner.get_parent()
+	if parent == null:
+		parent = get_tree().current_scene
+	parent.add_child(companion)
+	companion.configure_companion(kind, _owner, position, _companion_stats(kind), target, objective)
+
+
+func _companion_stats(kind: String) -> Dictionary:
+	match kind:
+		"treant":
+			return GameCatalog.stats(210.0, 68.0, 22.0, 46.0, 1.15, 0, 0)
+		"snake":
+			return GameCatalog.stats(75.0, 185.0, 13.0, 30.0, 0.55, 0, 0)
+		_:
+			return GameCatalog.stats(95.0, 145.0, 15.0, 38.0, 0.75, 0, 0)
+
+
+func _get_enemy_base_position() -> Vector2:
+	var fallback := Vector2(900.0, -520.0) if _owner.team == GameCatalog.TEAM_PLAYER else Vector2(-900.0, 520.0)
+	for node in get_tree().get_nodes_in_group("combat_actor"):
+		var actor := node as BaseStructure
+		if actor != null and _owner.can_damage(actor):
+			return actor.global_position
+
+	return fallback
+
+
+func _limited_target(target_position: Vector2, max_range: float) -> Vector2:
+	if max_range <= 0.0:
+		return target_position
+
+	return _owner.global_position.move_toward(target_position, max_range)
+
+
+func _reset_cooldowns() -> void:
+	_cooldowns.clear()
+	_cooldowns.resize(abilities.size())
+	for i in range(_cooldowns.size()):
+		_cooldowns[i] = 0.0
+
+
+func _distance_point_to_segment(point: Vector2, start: Vector2, end: Vector2) -> float:
+	var segment := end - start
+	var length_squared := segment.length_squared()
+
+	if length_squared <= 0.001:
+		return point.distance_to(start)
+
+	var t := clampf((point - start).dot(segment) / length_squared, 0.0, 1.0)
+	var projection := start + segment * t
+	return point.distance_to(projection)

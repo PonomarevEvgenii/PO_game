@@ -1,0 +1,17 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/Characters/HeroController.gd" id="1_hero"]
+[ext_resource type="Script" path="res://scripts/Combat/AbilityCaster.gd" id="2_abilities"]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_hero"]
+radius = 13.0
+
+[node name="Hero" type="CharacterBody2D"]
+script = ExtResource("1_hero")
+draw_radius = 14.0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("CircleShape2D_hero")
+
+[node name="AbilityCaster" type="Node" parent="."]
+script = ExtResource("2_abilities")

@@ -1,0 +1,10 @@
+.godot/
+.import/
+.mono/
+bin/
+obj/
+*.csproj.old
+*.tmp
+*.user
+legacy_csharp/godot_cache_backup/
+legacy_csharp/godot_mono_cache/
