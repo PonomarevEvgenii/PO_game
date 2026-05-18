@@ -5,10 +5,15 @@ signal ability_build_changed(points: int, levels: Array)
 
 @export var ability_caster_path: NodePath = NodePath("AbilityCaster")
 @export var order_stop_distance := 8.0
+@export var max_health_per_level := 22.0
+@export var attack_damage_per_level := 2.2
+@export var health_regen_per_level := 0.22
 
 var hero_id := GameCatalog.DEFAULT_HERO_ID
 var _ability_caster: AbilityCaster
 var _hero_body_color := Color(0.25, 0.78, 0.38)
+var _base_hero_stats := {}
+var _hero_level := 1
 var _has_move_order := false
 var _move_target := Vector2.ZERO
 var _attack_target: Actor
@@ -69,7 +74,8 @@ func configure_hero(definition: Dictionary) -> void:
 
 	hero_id = String(definition.get("id", GameCatalog.DEFAULT_HERO_ID))
 	_hero_body_color = _color_for_hero(hero_id)
-	configure(GameCatalog.TEAM_PLAYER, GameCatalog.LANE_MIDDLE, definition.get("stats", {}))
+	_base_hero_stats = definition.get("stats", {}).duplicate(true)
+	configure(GameCatalog.TEAM_PLAYER, GameCatalog.LANE_MIDDLE, _stats_for_level(_hero_level))
 
 	_bind_ability_caster()
 	if _ability_caster != null:
@@ -152,6 +158,18 @@ func apply_ability_build(points: int, levels: Array) -> void:
 		_ability_caster.apply_ability_build(points, levels)
 
 
+func apply_hero_level(level: int) -> void:
+	_hero_level = maxi(1, level)
+	if _base_hero_stats.is_empty():
+		return
+
+	apply_stats(_stats_for_level(_hero_level))
+
+
+func get_hero_level() -> int:
+	return _hero_level
+
+
 func get_hero_color() -> Color:
 	return _hero_body_color
 
@@ -174,6 +192,15 @@ func _bind_ability_caster() -> void:
 	_ability_caster = get_node_or_null(ability_caster_path) as AbilityCaster
 	if _ability_caster != null and not _ability_caster.ability_build_changed.is_connected(_on_ability_build_changed):
 		_ability_caster.ability_build_changed.connect(_on_ability_build_changed)
+
+
+func _stats_for_level(level: int) -> Dictionary:
+	var level_bonus := float(maxi(1, level) - 1)
+	var scaled := _base_hero_stats.duplicate(true)
+	scaled["max_health"] = float(scaled.get("max_health", 0.0)) + max_health_per_level * level_bonus
+	scaled["attack_damage"] = float(scaled.get("attack_damage", 0.0)) + attack_damage_per_level * level_bonus
+	scaled["health_regen"] = float(scaled.get("health_regen", 0.0)) + health_regen_per_level * level_bonus
+	return scaled
 
 
 func _on_ability_build_changed(points: int, levels: Array) -> void:

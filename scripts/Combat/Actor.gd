@@ -12,10 +12,14 @@ signal health_changed(current: float, maximum: float)
 	"attack_damage": 10.0,
 	"attack_range": 42.0,
 	"attack_cooldown": 1.0,
+	"health_regen": 0.0,
 	"gold_reward": 5,
 	"experience_reward": 4,
 }
 @export var draw_radius := 12.0
+
+const COLLISION_LAYER_ACTOR := 2
+const COLLISION_MASK_WORLD := 1
 
 var health := 0.0
 var is_selected := false
@@ -33,6 +37,7 @@ var _forced_target_timer := 0.0
 
 
 func _ready() -> void:
+	_configure_collision()
 	if health <= 0.0:
 		health = _stat("max_health")
 	refresh_groups()
@@ -43,6 +48,7 @@ func _physics_process(delta: float) -> void:
 	if _attack_cooldown > 0.0:
 		_attack_cooldown = maxf(0.0, _attack_cooldown - delta)
 
+	_tick_health_regen(delta)
 	_tick_statuses(delta)
 
 
@@ -50,6 +56,7 @@ func configure(new_team: String, new_lane: String, new_stats: Dictionary) -> voi
 	team = new_team
 	lane = new_lane
 	stats = new_stats.duplicate(true)
+	_configure_collision()
 	health = _stat("max_health")
 	_attack_cooldown = 0.0
 	_clear_statuses()
@@ -163,6 +170,22 @@ func pull_toward(point: Vector2, distance: float) -> void:
 
 func get_move_speed() -> float:
 	return _stat("move_speed") * _move_speed_multiplier
+
+
+func apply_stats(new_stats: Dictionary, keep_health_percent: bool = false) -> void:
+	var old_max_health := maxf(_stat("max_health"), 1.0)
+	var health_percent := clampf(health / old_max_health, 0.0, 1.0)
+	stats = new_stats.duplicate(true)
+	var new_max_health := maxf(_stat("max_health"), 1.0)
+
+	if keep_health_percent:
+		health = health_percent * new_max_health
+	else:
+		var gained_health := maxf(0.0, new_max_health - old_max_health)
+		health = minf(new_max_health, health + gained_health)
+
+	health_changed.emit(health, _stat("max_health"))
+	queue_redraw()
 
 
 func set_selected(selected: bool) -> void:
@@ -313,6 +336,14 @@ func _tick_statuses(delta: float) -> void:
 			queue_redraw()
 
 
+func _tick_health_regen(delta: float) -> void:
+	var regen := _stat("health_regen")
+	if regen <= 0.0 or not is_alive() or health >= _stat("max_health"):
+		return
+
+	heal(regen * delta)
+
+
 func _clear_statuses() -> void:
 	_move_speed_multiplier = 1.0
 	_move_speed_timer = 0.0
@@ -338,3 +369,8 @@ func refresh_groups() -> void:
 
 func _stat(key: String) -> float:
 	return float(stats.get(key, 0.0))
+
+
+func _configure_collision() -> void:
+	collision_layer = COLLISION_LAYER_ACTOR
+	collision_mask = COLLISION_MASK_WORLD

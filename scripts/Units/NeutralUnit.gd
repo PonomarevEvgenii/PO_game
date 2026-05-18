@@ -2,10 +2,13 @@ class_name NeutralUnit
 extends Actor
 
 @export var leash_radius := 180.0
+@export var aggro_radius := 90.0
+@export var home_stop_distance := 6.0
 @export var unit_id := "neutral_bruiser"
 
 var _home_position := Vector2.ZERO
 var _aggro_target: Actor
+var _returning_home := false
 
 
 func _ready() -> void:
@@ -20,23 +23,30 @@ func _physics_process(delta: float) -> void:
 		velocity = Vector2.ZERO
 		return
 
-	if _aggro_target == null or not is_instance_valid(_aggro_target) or not _aggro_target.is_alive():
-		_aggro_target = find_nearest_enemy(90.0)
+	if _returning_home:
+		_return_home()
+		move_and_slide()
+		_clamp_to_leash()
+		return
 
-	if _aggro_target != null and global_position.distance_to(_home_position) <= leash_radius:
-		if not try_attack(_aggro_target):
-			velocity = global_position.direction_to(_aggro_target.global_position) * get_move_speed()
-		else:
-			velocity = Vector2.ZERO
+	if not _is_valid_aggro_target(_aggro_target):
+		_aggro_target = _find_enemy_near_camp(aggro_radius)
+
+	if _aggro_target != null and not _can_keep_aggro(_aggro_target):
+		_start_return_home()
+	elif _aggro_target != null:
+		_fight_aggro_target()
 	else:
 		_return_home()
 
 	move_and_slide()
+	_clamp_to_leash()
 
 
 func take_damage(amount: float, source: Actor) -> void:
-	if source != null:
+	if source != null and not _returning_home and _can_keep_aggro(source):
 		_aggro_target = source
+		_returning_home = false
 
 	super.take_damage(amount, source)
 
@@ -45,6 +55,8 @@ func configure_neutral(new_unit_id: String, position: Vector2, new_stats: Dictio
 	unit_id = new_unit_id
 	global_position = position
 	_home_position = position
+	_aggro_target = null
+	_returning_home = false
 	configure(GameCatalog.TEAM_NEUTRAL, GameCatalog.LANE_MIDDLE, new_stats)
 	queue_redraw()
 
@@ -66,9 +78,71 @@ func _draw() -> void:
 
 
 func _return_home() -> void:
-	if global_position.distance_to(_home_position) < 6.0:
+	if global_position.distance_to(_home_position) < home_stop_distance:
+		global_position = _home_position
 		velocity = Vector2.ZERO
 		_aggro_target = null
+		_returning_home = false
 		return
 
 	velocity = global_position.direction_to(_home_position) * get_move_speed()
+
+
+func _fight_aggro_target() -> void:
+	if not _is_valid_aggro_target(_aggro_target):
+		_start_return_home()
+		return
+
+	var target := _aggro_target as Actor
+	if not try_attack(target):
+		velocity = global_position.direction_to(target.global_position) * get_move_speed()
+	else:
+		velocity = Vector2.ZERO
+
+
+func _start_return_home() -> void:
+	_aggro_target = null
+	_returning_home = true
+	_return_home()
+
+
+func _is_valid_aggro_target(target) -> bool:
+	if target == null or not is_instance_valid(target):
+		return false
+
+	var actor := target as Actor
+	return actor != null and actor.is_alive() and can_damage(actor)
+
+
+func _can_keep_aggro(target) -> bool:
+	if not _is_valid_aggro_target(target):
+		return false
+
+	return global_position.distance_to(_home_position) <= leash_radius
+
+
+func _find_enemy_near_camp(radius: float) -> Actor:
+	var best: Actor = null
+	var best_distance_squared := radius * radius
+
+	for node in get_tree().get_nodes_in_group("combat_actor"):
+		var actor := node as Actor
+		if actor == null or not can_damage(actor):
+			continue
+
+		var distance_squared := _home_position.distance_squared_to(actor.global_position)
+		if distance_squared < best_distance_squared:
+			best = actor
+			best_distance_squared = distance_squared
+
+	return best
+
+
+func _clamp_to_leash() -> void:
+	var offset := global_position - _home_position
+	if offset.length() <= leash_radius:
+		return
+
+	global_position = _home_position + offset.normalized() * leash_radius
+	if _aggro_target != null:
+		_start_return_home()

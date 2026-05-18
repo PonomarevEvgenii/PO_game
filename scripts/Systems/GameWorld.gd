@@ -240,6 +240,7 @@ func _spawn_player_hero() -> void:
 	_player_hero = player_hero_scene.instantiate() as HeroController
 	_actors.add_child(_player_hero)
 	_player_hero.configure_hero(definition)
+	_player_hero.apply_hero_level(_last_player_level)
 	_player_hero.apply_ability_build(_player_ability_points, _player_ability_levels)
 	if not _player_hero.ability_build_changed.is_connected(_on_player_ability_build_changed):
 		_player_hero.ability_build_changed.connect(_on_player_ability_build_changed)
@@ -309,6 +310,8 @@ func _on_unit_upgraded(unit_id: String, level: int) -> void:
 
 func _on_player_experience_changed(level: int, _experience_value: int, _required_experience: int) -> void:
 	if level > _last_player_level:
+		if _player_hero != null and is_instance_valid(_player_hero):
+			_player_hero.apply_hero_level(level)
 		_grant_player_ability_points(level - _last_player_level)
 
 	_last_player_level = level

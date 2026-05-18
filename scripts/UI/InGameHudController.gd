@@ -3,11 +3,17 @@ extends Control
 
 signal shop_requested
 
+const MAX_TOOLTIP_ABILITY_LEVEL := 4
+
 var _gold_label: Label
 var _experience_label: Label
 var _health_label: Label
+var _damage_label: Label
+var _regen_label: Label
 var _hero_label: Label
 var _respawn_label: Label
+var _respawn_overlay: Control
+var _respawn_overlay_timer_label: Label
 var _wave_timer_label: Label
 var _skill_points_label: Label
 var _ability_tooltip_panel: PanelContainer
@@ -62,7 +68,7 @@ func _ready() -> void:
 	bottom_bar.anchor_bottom = 1.0
 	bottom_bar.offset_left = 18.0
 	bottom_bar.offset_right = -18.0
-	bottom_bar.offset_top = -158.0
+	bottom_bar.offset_top = -188.0
 	bottom_bar.offset_bottom = -12.0
 	bottom_bar.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(bottom_bar)
@@ -79,7 +85,7 @@ func _ready() -> void:
 	row.add_child(_create_portrait_panel())
 
 	var info_panel := VBoxContainer.new()
-	info_panel.custom_minimum_size = Vector2(220.0, 132.0)
+	info_panel.custom_minimum_size = Vector2(220.0, 162.0)
 	info_panel.add_theme_constant_override("separation", 4)
 	row.add_child(info_panel)
 
@@ -88,11 +94,15 @@ func _ready() -> void:
 	info_panel.add_child(_hero_label)
 
 	_health_label = _create_hud_label("HP")
+	_damage_label = _create_hud_label("Damage")
+	_regen_label = _create_hud_label("Regen")
 	_respawn_label = _create_hud_label("")
 	_gold_label = _create_hud_label("Gold")
 	_experience_label = _create_hud_label("Hero Lv")
 	_skill_points_label = _create_hud_label("Skill pts: 0")
 	info_panel.add_child(_health_label)
+	info_panel.add_child(_damage_label)
+	info_panel.add_child(_regen_label)
 	info_panel.add_child(_respawn_label)
 	info_panel.add_child(_experience_label)
 	info_panel.add_child(_skill_points_label)
@@ -133,6 +143,7 @@ func _ready() -> void:
 	right_panel.add_child(hint)
 
 	_create_ability_tooltip_panel()
+	_create_respawn_overlay()
 
 
 func bind(economy: EconomySystem, experience: ExperienceSystem, hero: HeroController) -> void:
@@ -179,6 +190,10 @@ func show_selected_actor(actor: Actor) -> void:
 			_hero_label.text = "Selected: none"
 		if _health_label != null:
 			_health_label.text = "HP: -"
+		if _damage_label != null:
+			_damage_label.text = "Damage: -"
+		if _regen_label != null:
+			_regen_label.text = "Regen: -"
 		return
 
 	if not _selected_actor.health_changed.is_connected(_on_selected_health_changed):
@@ -187,6 +202,7 @@ func show_selected_actor(actor: Actor) -> void:
 	if _hero_label != null:
 		_hero_label.text = "%s: %s" % [_selected_kind(_selected_actor), _selected_name(_selected_actor)]
 	_on_selected_health_changed(_selected_actor.health, float(_selected_actor.stats.get("max_health", 0.0)))
+	_update_selected_stats()
 
 
 func set_respawn_time(remaining: float) -> void:
@@ -196,11 +212,20 @@ func set_respawn_time(remaining: float) -> void:
 	if remaining > 0.0:
 		_respawn_label.visible = true
 		_respawn_label.text = "Respawn: %ds" % ceili(remaining)
+		if _respawn_overlay != null:
+			_respawn_overlay.visible = true
+			_respawn_overlay.move_to_front()
+		if _respawn_overlay_timer_label != null:
+			_respawn_overlay_timer_label.text = str(ceili(remaining))
 		if _health_label != null and _selected_actor == _hero:
 			_health_label.text = "HP: dead"
 	else:
 		_respawn_label.visible = false
 		_respawn_label.text = ""
+		if _respawn_overlay != null:
+			_respawn_overlay.visible = false
+		if _respawn_overlay_timer_label != null:
+			_respawn_overlay_timer_label.text = ""
 
 
 func set_wave_timer(remaining: float, next_wave_number: int) -> void:
@@ -252,18 +277,76 @@ func _create_ability_tooltip_panel() -> void:
 	_ability_tooltip_panel.anchor_bottom = 1.0
 	_ability_tooltip_panel.offset_left = -120.0
 	_ability_tooltip_panel.offset_right = 300.0
-	_ability_tooltip_panel.offset_top = -328.0
+	_ability_tooltip_panel.offset_top = -438.0
 	_ability_tooltip_panel.offset_bottom = -178.0
 	_ability_tooltip_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_ability_tooltip_panel.visible = false
 	add_child(_ability_tooltip_panel)
 
 	_ability_tooltip_label = Label.new()
-	_ability_tooltip_label.custom_minimum_size = Vector2(390.0, 126.0)
+	_ability_tooltip_label.custom_minimum_size = Vector2(390.0, 236.0)
 	_ability_tooltip_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_ability_tooltip_label.add_theme_font_size_override("font_size", 13)
 	_ability_tooltip_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_ability_tooltip_panel.add_child(_ability_tooltip_label)
+
+
+func _create_respawn_overlay() -> void:
+	_respawn_overlay = Control.new()
+	_respawn_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_respawn_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_respawn_overlay.visible = false
+	add_child(_respawn_overlay)
+
+	var dim := ColorRect.new()
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.color = Color(0.0, 0.0, 0.0, 0.68)
+	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_respawn_overlay.add_child(dim)
+
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_respawn_overlay.add_child(center)
+
+	var box := VBoxContainer.new()
+	box.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.add_theme_constant_override("separation", 8)
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	center.add_child(box)
+
+	var title := Label.new()
+	title.text = "YOU DIED"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 46)
+	title.add_theme_color_override("font_color", Color(1.0, 0.30, 0.22))
+	title.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.95))
+	title.add_theme_constant_override("shadow_offset_x", 3)
+	title.add_theme_constant_override("shadow_offset_y", 3)
+	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(title)
+
+	var subtitle := Label.new()
+	subtitle.text = "Respawn in"
+	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	subtitle.add_theme_font_size_override("font_size", 22)
+	subtitle.add_theme_color_override("font_color", Color(0.92, 0.88, 0.78))
+	subtitle.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.9))
+	subtitle.add_theme_constant_override("shadow_offset_x", 2)
+	subtitle.add_theme_constant_override("shadow_offset_y", 2)
+	subtitle.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(subtitle)
+
+	_respawn_overlay_timer_label = Label.new()
+	_respawn_overlay_timer_label.text = ""
+	_respawn_overlay_timer_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_respawn_overlay_timer_label.add_theme_font_size_override("font_size", 64)
+	_respawn_overlay_timer_label.add_theme_color_override("font_color", Color(1.0, 0.88, 0.42))
+	_respawn_overlay_timer_label.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.95))
+	_respawn_overlay_timer_label.add_theme_constant_override("shadow_offset_x", 3)
+	_respawn_overlay_timer_label.add_theme_constant_override("shadow_offset_y", 3)
+	_respawn_overlay_timer_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(_respawn_overlay_timer_label)
 
 
 func _create_ability_slot(number: int) -> Control:
@@ -494,27 +577,65 @@ func _ability_tooltip(slot_number: int, ability: Dictionary, ability_level: int 
 	lines.append(String(ability.get("description", "")))
 	lines.append("")
 	lines.append("Target: %s" % _format_targeting(String(ability.get("targeting", ""))))
-	lines.append("Damage/Power: %s" % _format_ability_power(ability, ability_level))
-	if ability_level > 0 and ability_level < 4:
-		lines.append("Next level: %s" % _format_number(_ability_power_at_level(ability, ability_level + 1)))
-	elif ability_level <= 0:
-		lines.append("Learned value: %s" % _format_number(_ability_power_at_level(ability, 1)))
-	lines.append("Cast range: %s" % _format_number(float(ability.get("range", 0.0))))
-	lines.append("Effect radius: %s" % _format_number(float(ability.get("radius", 0.0))))
-	lines.append("Cooldown: %ss" % _format_number(float(ability.get("cooldown", 0.0))))
+	_append_level_line(lines, "Power", "power", ability, ability_level)
+	_append_level_line(lines, "Cast range", "range", ability, ability_level)
+	_append_level_line(lines, "Effect radius", "radius", ability, ability_level)
+	_append_level_line(lines, "Duration", "duration", ability, ability_level, "s")
+	_append_level_line(lines, "Cooldown", "cooldown", ability, ability_level, "s")
+	_append_level_line(lines, "Move speed", "speed_multiplier", ability, ability_level, "x")
+	_append_level_line(lines, "Attack damage", "damage_multiplier", ability, ability_level, "x")
+	_append_level_line(lines, "Damage taken", "damage_reduction", ability, ability_level, "x")
+	_append_level_line(lines, "Enemy slow", "slow_multiplier", ability, ability_level, "x")
+	_append_level_line(lines, "Vulnerability", "vulnerability", ability, ability_level, "x")
+	_append_level_line(lines, "Pull distance", "pull_distance", ability, ability_level)
+	_append_level_line(lines, "Freeze", "freeze_duration", ability, ability_level, "s")
+	_append_level_line(lines, "Taunt", "taunt_duration", ability, ability_level, "s")
 	return "\n".join(lines)
 
 
-func _format_ability_power(ability: Dictionary, ability_level: int) -> String:
-	if ability_level <= 0:
-		return "-"
+func _append_level_line(lines: Array[String], label: String, key: String, ability: Dictionary, ability_level: int, suffix: String = "") -> void:
+	if not _should_show_ability_value(ability, key):
+		return
 
-	return _format_number(_ability_power_at_level(ability, ability_level))
+	lines.append("%s: %s" % [label, _format_ability_level_values(ability, key, ability_level, suffix)])
 
 
-func _ability_power_at_level(ability: Dictionary, ability_level: int) -> float:
-	var base_power := float(ability.get("power", 0.0))
-	return base_power * (1.0 + float(maxi(ability_level, 1) - 1) * 0.25)
+func _format_ability_level_values(ability: Dictionary, key: String, ability_level: int, suffix: String = "") -> String:
+	var values: Array[String] = []
+	for level in range(1, MAX_TOOLTIP_ABILITY_LEVEL + 1):
+		var value_text := _format_number(_ability_value_at_level(ability, key, level)) + suffix
+		if ability_level == level:
+			value_text = "[%s]" % value_text
+		values.append(value_text)
+
+	return " / ".join(values)
+
+
+func _ability_value_at_level(ability: Dictionary, key: String, level: int) -> float:
+	var level_values: Dictionary = ability.get("level_values", {})
+	if level_values.has(key):
+		var values: Array = level_values.get(key, [])
+		if not values.is_empty():
+			var index := clampi(level - 1, 0, values.size() - 1)
+			return float(values[index])
+
+	if key == "power":
+		var base_power := float(ability.get("power", 0.0))
+		return base_power * (1.0 + float(maxi(level, 1) - 1) * 0.25)
+
+	return float(ability.get(key, 0.0))
+
+
+func _should_show_ability_value(ability: Dictionary, key: String) -> bool:
+	var level_values: Dictionary = ability.get("level_values", {})
+	if level_values.has(key):
+		var values: Array = level_values.get(key, [])
+		for value in values:
+			if absf(float(value)) > 0.001:
+				return true
+		return false
+
+	return absf(float(ability.get(key, 0.0))) > 0.001
 
 
 func _format_targeting(targeting: String) -> String:
@@ -553,11 +674,23 @@ func _on_experience_changed(level: int, experience: int, required_experience: in
 func _on_hero_health_changed(current: float, maximum: float) -> void:
 	if _selected_actor == _hero and _health_label != null:
 		_health_label.text = "HP: %d/%d" % [roundi(current), roundi(maximum)]
+		_update_selected_stats()
 
 
 func _on_selected_health_changed(current: float, maximum: float) -> void:
 	if _health_label != null:
 		_health_label.text = "HP: %d/%d" % [roundi(current), roundi(maximum)]
+	_update_selected_stats()
+
+
+func _update_selected_stats() -> void:
+	if _selected_actor == null or not is_instance_valid(_selected_actor):
+		return
+
+	if _damage_label != null:
+		_damage_label.text = "Damage: %s" % _format_number(float(_selected_actor.stats.get("attack_damage", 0.0)))
+	if _regen_label != null:
+		_regen_label.text = "Regen: %s/s" % _format_number(float(_selected_actor.stats.get("health_regen", 0.0)))
 
 
 func _selected_kind(actor: Actor) -> String:

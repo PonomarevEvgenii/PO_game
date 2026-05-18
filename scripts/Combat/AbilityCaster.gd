@@ -112,7 +112,7 @@ func _execute_ability(ability: Dictionary, target_position: Vector2) -> void:
 		"mark_prey":
 			_mark_prey(target_position, ability)
 		"nature_dash":
-			_owner.apply_move_speed_multiplier(1.85, 2.4)
+			_owner.apply_move_speed_multiplier(float(ability.get("speed_multiplier", 1.85)), float(ability.get("duration", 2.4)))
 		"hail_of_arrows":
 			_hail_of_arrows(target_position, ability)
 		"healing_melody":
@@ -127,8 +127,9 @@ func _execute_ability(ability: Dictionary, target_position: Vector2) -> void:
 		"whirlwind":
 			_damage_enemies_in_radius(_owner.global_position, float(ability.get("radius", 0.0)), float(ability.get("power", 0.0)))
 		"blood_rage":
-			_owner.apply_move_speed_multiplier(1.45, 4.0)
-			_owner.apply_attack_damage_multiplier(1.35, 4.0)
+			var duration := float(ability.get("duration", 4.0))
+			_owner.apply_move_speed_multiplier(float(ability.get("speed_multiplier", 1.45)), duration)
+			_owner.apply_attack_damage_multiplier(float(ability.get("damage_multiplier", 1.35)), duration)
 			_owner.heal(float(ability.get("power", 0.0)) * 0.75)
 		"battle_cry":
 			_battle_cry(ability)
@@ -143,11 +144,11 @@ func _execute_ability(ability: Dictionary, target_position: Vector2) -> void:
 		"void_sphere":
 			_void_sphere(target_position, ability)
 		"alpha_wolf":
-			_spawn_companion("wolf", _owner.global_position + Vector2(28.0, -16.0), null, Vector2.ZERO)
+			_spawn_companion("wolf", _owner.global_position + Vector2(28.0, -16.0), null, Vector2.ZERO, ability)
 		"thorns":
 			_thorns(target_position, ability)
 		"summon_treant":
-			_spawn_companion("treant", _limited_target(target_position, float(ability.get("range", 0.0))), null, _get_enemy_base_position())
+			_spawn_companion("treant", _limited_target(target_position, float(ability.get("range", 0.0))), null, _get_enemy_base_position(), ability)
 		"snake_charmer":
 			_snake_charmer(target_position, ability)
 		_:
@@ -286,7 +287,7 @@ func _mark_prey(target_position: Vector2, ability: Dictionary) -> void:
 	if target == null:
 		return
 
-	target.apply_vulnerability(1.45, 5.0)
+	target.apply_vulnerability(float(ability.get("vulnerability", 1.45)), float(ability.get("duration", 5.0)))
 	target.take_damage(float(ability.get("power", 0.0)) * 0.55, _owner)
 
 
@@ -307,12 +308,12 @@ func _swamp_ritual(target_position: Vector2, ability: Dictionary) -> void:
 	var power := float(ability.get("power", 0.0))
 	_apply_to_enemies_in_radius(center, radius, func(actor: Actor) -> void:
 		actor.take_damage(power, _owner)
-		actor.apply_move_speed_multiplier(0.62, 4.0)
-		actor.apply_vulnerability(1.18, 4.0)
+		actor.apply_move_speed_multiplier(float(ability.get("slow_multiplier", 0.62)), float(ability.get("duration", 4.0)))
+		actor.apply_vulnerability(float(ability.get("vulnerability", 1.18)), float(ability.get("duration", 4.0)))
 	)
 	_apply_to_allies_in_radius(center, radius, func(actor: Actor) -> void:
 		actor.heal(power * 0.6)
-		actor.apply_damage_reduction(0.86, 4.0)
+		actor.apply_damage_reduction(float(ability.get("damage_reduction", 0.86)), float(ability.get("duration", 4.0)))
 	)
 
 
@@ -321,20 +322,20 @@ func _sticky_tongue(target_position: Vector2, ability: Dictionary) -> void:
 	if target == null:
 		return
 
-	target.pull_toward(_owner.global_position, 95.0)
-	target.apply_move_speed_multiplier(0.55, 2.0)
+	target.pull_toward(_owner.global_position, float(ability.get("pull_distance", 95.0)))
+	target.apply_move_speed_multiplier(float(ability.get("slow_multiplier", 0.55)), float(ability.get("duration", 2.0)))
 	target.take_damage(float(ability.get("power", 0.0)), _owner)
 
 
 func _battle_cry(ability: Dictionary) -> void:
 	_apply_to_allies_in_radius(_owner.global_position, float(ability.get("radius", 0.0)), func(actor: Actor) -> void:
-		actor.apply_damage_reduction(0.62, 5.0)
+		actor.apply_damage_reduction(float(ability.get("damage_reduction", 0.62)), float(ability.get("duration", 5.0)))
 	)
 
 
 func _berserkers_call(ability: Dictionary) -> void:
 	_apply_to_enemies_in_radius(_owner.global_position, float(ability.get("radius", 0.0)), func(actor: Actor) -> void:
-		actor.force_target(_owner, 3.5)
+		actor.force_target(_owner, float(ability.get("taunt_duration", 3.5)))
 		actor.take_damage(float(ability.get("power", 0.0)) * 0.5, _owner)
 	)
 
@@ -348,14 +349,14 @@ func _ice_sphere(target_position: Vector2, ability: Dictionary) -> void:
 
 		if _distance_point_to_segment(actor.global_position, _owner.global_position, end) <= maxf(float(ability.get("radius", 0.0)), 42.0):
 			actor.take_damage(float(ability.get("power", 0.0)), _owner)
-			actor.apply_move_speed_multiplier(0.0, 1.8)
+			actor.apply_move_speed_multiplier(0.0, float(ability.get("freeze_duration", 1.8)))
 
 
 func _void_sphere(target_position: Vector2, ability: Dictionary) -> void:
 	var center := _limited_target(target_position, float(ability.get("range", 0.0)))
 	_apply_to_enemies_in_radius(center, float(ability.get("radius", 0.0)), func(actor: Actor) -> void:
-		actor.pull_toward(center, 120.0)
-		actor.apply_move_speed_multiplier(0.35, 2.5)
+		actor.pull_toward(center, float(ability.get("pull_distance", 120.0)))
+		actor.apply_move_speed_multiplier(float(ability.get("slow_multiplier", 0.35)), float(ability.get("duration", 2.5)))
 		actor.take_damage(float(ability.get("power", 0.0)), _owner)
 	)
 
@@ -364,8 +365,8 @@ func _thorns(target_position: Vector2, ability: Dictionary) -> void:
 	var center := _limited_target(target_position, float(ability.get("range", 0.0)))
 	_apply_to_enemies_in_radius(center, float(ability.get("radius", 0.0)), func(actor: Actor) -> void:
 		actor.take_damage(float(ability.get("power", 0.0)), _owner)
-		actor.apply_move_speed_multiplier(0.72, 4.0)
-		actor.apply_vulnerability(1.12, 4.0)
+		actor.apply_move_speed_multiplier(float(ability.get("slow_multiplier", 0.72)), float(ability.get("duration", 4.0)))
+		actor.apply_vulnerability(float(ability.get("vulnerability", 1.12)), float(ability.get("duration", 4.0)))
 	)
 
 
@@ -375,27 +376,37 @@ func _snake_charmer(target_position: Vector2, ability: Dictionary) -> void:
 		_damage_nearest_enemy_to_point(target_position, float(ability.get("range", 0.0)), float(ability.get("power", 0.0)))
 		return
 
-	_spawn_companion("snake", _owner.global_position + Vector2(18.0, 10.0), target, target.global_position)
+	_spawn_companion("snake", _owner.global_position + Vector2(18.0, 10.0), target, target.global_position, ability)
 	target.take_damage(float(ability.get("power", 0.0)) * 0.35, _owner)
 
 
-func _spawn_companion(kind: String, position: Vector2, target: Actor, objective: Vector2) -> void:
+func _spawn_companion(kind: String, position: Vector2, target: Actor, objective: Vector2, ability: Dictionary = {}) -> void:
 	var companion := SummonedCompanion.new()
 	var parent := _owner.get_parent()
 	if parent == null:
 		parent = get_tree().current_scene
 	parent.add_child(companion)
-	companion.configure_companion(kind, _owner, _clamp_to_playable_rect(position), _companion_stats(kind), target, _clamp_to_playable_rect(objective))
+	companion.configure_companion(kind, _owner, _clamp_to_playable_rect(position), _companion_stats(kind, ability), target, _clamp_to_playable_rect(objective), float(ability.get("duration", 0.0)))
 
 
-func _companion_stats(kind: String) -> Dictionary:
+func _companion_stats(kind: String, ability: Dictionary = {}) -> Dictionary:
+	var power := float(ability.get("power", 0.0))
+	if power <= 0.0:
+		match kind:
+			"treant":
+				return GameCatalog.stats(210.0, 68.0, 22.0, 46.0, 1.15, 0, 0)
+			"snake":
+				return GameCatalog.stats(75.0, 185.0, 13.0, 30.0, 0.55, 0, 0)
+			_:
+				return GameCatalog.stats(95.0, 145.0, 15.0, 38.0, 0.75, 0, 0)
+
 	match kind:
 		"treant":
-			return GameCatalog.stats(210.0, 68.0, 22.0, 46.0, 1.15, 0, 0)
+			return GameCatalog.stats(170.0 + power * 2.0, 68.0, power * 0.55, 46.0, 1.15, 0, 0)
 		"snake":
-			return GameCatalog.stats(75.0, 185.0, 13.0, 30.0, 0.55, 0, 0)
+			return GameCatalog.stats(55.0 + power, 185.0, power * 0.45, 30.0, 0.55, 0, 0)
 		_:
-			return GameCatalog.stats(95.0, 145.0, 15.0, 38.0, 0.75, 0, 0)
+			return GameCatalog.stats(70.0 + power * 1.2, 145.0, power * 0.5, 38.0, 0.75, 0, 0)
 
 
 func _get_enemy_base_position() -> Vector2:
@@ -443,9 +454,27 @@ func _ability_for_level(ability: Dictionary, level: int) -> Dictionary:
 		return {}
 
 	var scaled := ability.duplicate(true)
-	var power := float(scaled.get("power", 0.0))
-	scaled["power"] = power * (1.0 + float(maxi(level, 1) - 1) * 0.25)
+	var clamped_level := clampi(level, 1, MAX_ABILITY_LEVEL)
+	var level_values: Dictionary = scaled.get("level_values", {})
+	for key in level_values.keys():
+		scaled[key] = _level_value(level_values.get(key, []), clamped_level, scaled.get(key, 0.0))
+
+	if not level_values.has("power"):
+		var power := float(scaled.get("power", 0.0))
+		scaled["power"] = power * (1.0 + float(clamped_level - 1) * 0.25)
 	return scaled
+
+
+func _level_value(values_variant, level: int, fallback) -> float:
+	if not (values_variant is Array):
+		return float(fallback)
+
+	var values: Array = values_variant
+	if values.is_empty():
+		return float(fallback)
+
+	var index := clampi(level - 1, 0, values.size() - 1)
+	return float(values[index])
 
 
 func _emit_ability_build_changed() -> void:

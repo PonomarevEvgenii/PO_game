@@ -40,7 +40,7 @@ func _physics_process(delta: float) -> void:
 	move_and_slide()
 
 
-func configure_companion(kind: String, owner: Actor, position: Vector2, new_stats: Dictionary, target: Actor = null, objective: Vector2 = Vector2.ZERO) -> void:
+func configure_companion(kind: String, owner: Actor, position: Vector2, new_stats: Dictionary, target: Actor = null, objective: Vector2 = Vector2.ZERO, lifetime_override: float = 0.0) -> void:
 	companion_kind = kind
 	owner_actor = owner
 	target_actor = target
@@ -61,6 +61,9 @@ func configure_companion(kind: String, owner: Actor, position: Vector2, new_stat
 			draw_radius = 10.0
 			lifetime = 22.0
 			aggro_range = 170.0
+
+	if lifetime_override > 0.0:
+		lifetime = lifetime_override
 
 	queue_redraw()
 
